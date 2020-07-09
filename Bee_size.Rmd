@@ -1,0 +1,228 @@
+---
+title: "Bee_size"
+author: "Maggie Klope"
+date: "7/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+library(forcats)
+library(RColorBrewer)
+
+```
+
+Reading in Bee Data
+
+```{r}
+# read in data
+andrenidae <- read_csv("Data/Andrenidae_North_America.csv")
+apidae_us <- read_csv("Data/Apidae_US.csv.zip") 
+apidae_mex <-read_csv("Data/Apidae_Mexico.csv") 
+apidae_can <- read_csv("Data/Apidae_Canada.csv") 
+colletidae <- read_csv("Data/Colletidae_North_America.csv")
+halictadae <-read_csv("Data/Halictidae_North_America.csv.zip") 
+megachilidae <- read_csv("Data/Megachilidae_North_America.csv")
+melittidae <- read_csv("Data/Melittidae_North_America.csv")
+
+# append together
+bees_raw <- rbind(andrenidae, apidae_us, apidae_mex, apidae_can, colletidae, halictadae, megachilidae, melittidae) 
+
+#tidy
+bees <- bees_raw %>% 
+  filter(captive_cultivated == "FALSE") %>% # remove cultivated observation
+  filter(taxon_genus_name != 'NA') # removing observations with no genus
+  
+```
+
+Adding in a column for Apis mellifera to make size comparisons
+
+```{r}
+bees_raw$Apis_mellifera <- ifelse(bees_raw$taxon_species_name == "Apis mellifera", "Apis mellifera", "other")
+```
+
+## Exploratory Graphs
+
+### Genus Apis
+
+- almost all Apis mellifera
+
+```{r}
+
+apis <- bees_raw %>% 
+  filter(taxon_genus_name == "Apis")
+
+ggplot(apis, aes(x = forcats::fct_infreq(taxon_species_name)))+
+  geom_bar(stat = "count")+
+  coord_flip()
+
+```
+
+### Genus Bombus
+
+- Bombus impatiens most common
+
+```{r}
+bombus <- bees_raw %>% 
+  filter(taxon_genus_name == "Bombus")
+
+ggplot(bombus, aes(x = forcats::fct_infreq(taxon_species_name)))+
+  geom_bar(stat = "count")+
+  coord_flip()
+
+```
+
+## United States Observation Heat Map
+
+```{r}
+
+#filter to just United States
+bees_us <- bees_raw %>% 
+  filter(place_country_name == "United States")
+  
+#load polygon for map
+usa <- map_data("state")
+ca <- subset(usa, region %in% c('california'))
+
+#heat map for USA observations
+ggplot() +
+  geom_polygon(data = usa, aes(x = long, y = lat, group = group), fill="lightgray", colour = "white")+
+  #geom_point(data = bees_us, aes(x = longitude, y = latitude), color = "black", size = 1, alpha = 0.9)+
+  geom_bin2d(data = bees_us, aes(x = longitude, y = latitude), bins = 100)+
+  scale_fill_continuous(type = "viridis") +
+  xlim(-125,-65)+
+  ylim(20,50)+
+  theme_minimal()
+
+```
+
+## California Observations Heatmap
+
+```{r}
+
+#filter to just california
+bees_ca <- bees_raw %>% 
+  filter(place_state_name == "California")
+
+#load polygon for map
+ca <- subset(usa, region %in% c('california'))
+
+#heat map for California observations
+ggplot() +
+  geom_polygon(data = ca, aes(x = long, y = lat, group = group), fill="lightgray", colour = "white")+
+  #geom_point(data = bees_us, aes(x = longitude, y = latitude), color = "black", size = 1, alpha = 0.9)+
+  geom_bin2d(data = bees_ca, aes(x = longitude, y = latitude), bins = 100)+
+  scale_fill_continuous(type = "viridis") +
+  theme_minimal()+
+  coord_fixed(1.3)
+
+```
+
+## Load bee size data
+
+```{r}
+size_data <- read_csv("Data/bee_size_data.csv")
+
+#joing iNat data with size data
+bee_size <- bees_raw %>% 
+  add_column(size = NA) %>% 
+  gather(key = "taxon_genus_name") %>% 
+  left_join(size_data, by = "taxon_genus_name", missing = NA)
+  #spread(key = taxon_genus_name, value = SIZE)
+
+bee_size <- merge(bees_raw, size_data, by = "taxon_genus_name", all.x = TRUE)
+
+unique(bee_size$SIZE)
+
+#getting list of records with genera missing from our size data
+missing_genera <- bee_size %>%
+  filter(is.na(SIZE))
+
+missing <- unique(missing_genera[c('taxon_family_name', 'taxon_genus_name')])
+
+
+```
+
+## Bee size visualization
+
+```{r}
+genera_counts <- bee_size %>% 
+  group_by(SIZE) %>% 
+  summarise(count = n_distinct(taxon_genus_name))
+
+genera_counts$count
+
+ggplot(data = bee_size, aes(x = SIZE))+
+  geom_bar(aes(fill = quality_grade))+
+  xlab('Size Classes')+
+  ylab('Number of Observations')+
+  ggtitle('North American iNat Bee Observations by size \n (greater or less than Apis mellifera)')+
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+   scale_fill_brewer(palette="Paired")
+
+ggplot(data = bee_size, aes(x = SIZE))+
+  geom_bar(aes(fill = Apis_mellifera))+
+  xlab('Size Classes')+
+  ylab('Number of Observations')+
+  ggtitle('North American iNat Bee Observations by size \n (greater or less than Apis mellifera)')+
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_fill_brewer(palette="Paired")
+
+```
+
+##User identifcation and size class
+
+```{r}
+
+ggplot(data = bee_size, aes(x = SIZE))+
+  geom_bar(aes(fill = factor(num_identification_agreements)))+
+  xlab('Size Classes')+
+  ylab('Number of Observations')+
+  ggtitle('Observations agreements by Size')+
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_fill_brewer(palette="Paired")
+
+ggplot(data = bee_size, aes(x = SIZE))+
+  geom_bar(aes(fill = factor(num_identification_disagreements)))+
+  xlab('Size Classes')+
+  ylab('Number of Observations')+
+  ggtitle('Identification Disagreements by Size')+
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_fill_brewer(palette="Paired")
+
+#users for each size group
+#take number of observations divided by number of user_logins
+
+# length(unique(bee_size$user_login)) #61,959 total users
+# 
+# less <- bee_size %>% 
+#   filter(SIZE == "less")
+# less_obs <- length(less$X) #29175 observations
+# less_users <- length(unique(less$user_id)) #6270 identifying 
+# 
+# less_obs/less_users #average observations/user = 4.658993
+
+greater <- bee_size %>% 
+  filter(SIZE == "greater/equal") 
+greater_obs <- length(greater$X) #202024 observations
+greater_users <- length(unique(greater$user_id)) #55041 identifying
+greater_obs/greater_users  #3.675169 averageobservations/user
+
+both <- bee_size %>% 
+  filter(SIZE == "both") 
+both_obs <- length(both$X) #67483 observations
+both_users <- length(unique(both$user_id)) #12606 identifying
+both_obs/greater_users  #1.232184 averageobservations/user
+
+# group_by(bee_size, SIZE) %>% summarize(m = mean(num_identification_agreements))
+# group_by(bee_size, SIZE) %>% summarize(m = mean(num_identification_disagreements))
+
+```
+
